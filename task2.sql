@@ -139,3 +139,49 @@ VALUES ('TESTBAD00003', 'JYYNPD5Q54', 'Economy', 15000, '3EA2CXG3P3VW');
 
 --- итог
 SELECT * FROM tickets WHERE id LIKE 'TEST%';
+
+--- задание 4, через rollback
+
+DROP PROCEDURE IF EXISTS buy_ticket;
+
+DELIMITER //
+CREATE PROCEDURE buy_ticket(
+    IN t_id VARCHAR(12),
+    in t_trip_id VARCHAR(10),
+    in t_service_class VARCHAR(255),
+    in t_price int,
+    in t_client_id VARCHAR(12)
+)
+BEGIN
+   declare v_status varchar(20);
+   declare exit handler for sqlexception
+   BEGIN                                                     
+        ROLLBACK;                                             
+        RESIGNAL;                                              
+    END;
+
+    select status into v_status
+    from trips
+    where id = t_trip_id;
+
+    start transaction;
+
+    if t_price is null then
+        rollback;
+        signal sqlstate '45000'
+        set message_text = 'Оплата не прошла(price IS NULL). Покупка отменена, транзакция откачена.';
+    elseif v_status = 'Cancelled' then
+        rollback;
+        signal sqlstate '45000'
+        set message_text = 'Рейс отменен(Cancelled).Покупка отклонена, транзакция откачена. ';
+    elseif v_status <> 'Scheduled' then  
+        rollback;                      
+        signal sqlstate '45000'
+        set message_text = 'Рейс не в статусе Scheduled. Продажа запрещена.';
+    else
+        insert into tickets (id, trip_id, service_class, price, client_id) values (t_id, t_trip_id, t_service_class, t_price, t_client_id);
+        commit;
+    end if;                           
+
+END //
+DELIMITER ;
